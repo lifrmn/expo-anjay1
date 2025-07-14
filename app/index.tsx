@@ -7,18 +7,19 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text
+  Text,
+  View,
 } from "react-native";
 
-// 1) Hitung lebar layar agar 3 gambar muat pas
+// Hitung lebar layar agar 3 gambar muat pas
 const screenWidth = Dimensions.get("window").width;
-const IMAGE_SIZE = (screenWidth - 60) / 3; // 20px padding + margin antar gambar
+const IMAGE_SIZE = (screenWidth - 60) / 3; // 20px padding + 10px margin antar gambar
 
-// 2) Definisikan tipe data dan state
+// Tipe data gambar & state
 type ImageData = { id: string; main: string; alt: string };
 type ImageState = { clicked: boolean; scale: number; clicks: number };
 
-// 3) Daftar 9 gambar lengkap dengan URL
+// 9 gambar utama + alternatif
 const DATA: ImageData[] = [
   {
     id: "1",
@@ -85,14 +86,12 @@ const DATA: ImageData[] = [
   },
 ];
 
-// 4) Props komponen satu gambar
+// Komponen satu gambar
 interface ImageItemProps {
   item: ImageData;
   state: ImageState;
   onPress: (id: string) => void;
 }
-
-// 5) Komponen gambar tunggal
 const ImageItem: React.FC<ImageItemProps> = ({ item, state, onPress }) => (
   <Pressable onPress={() => onPress(item.id)}>
     <Image
@@ -103,55 +102,51 @@ const ImageItem: React.FC<ImageItemProps> = ({ item, state, onPress }) => (
   </Pressable>
 );
 
-// 6) Komponen utama grid 3×3
+// Komponen grid 3×3
 const ALIFVariant: React.FC = () => {
-  // Inisialisasi state per gambar
-  const initialStates: Record<string, ImageState> = DATA.reduce((acc, curr) => {
-    acc[curr.id] = { clicked: false, scale: 1, clicks: 0 };
-    return acc;
-  }, {} as Record<string, ImageState>);
+  // Inisialisasi state (clicked/scale/clicks) untuk setiap id
+  const initial: Record<string, ImageState> = {};
+  DATA.forEach((img) => {
+    initial[img.id] = { clicked: false, scale: 1, clicks: 0 };
+  });
+  const [states, setStates] = useState<Record<string, ImageState>>(initial);
 
-  const [states, setStates] =
-    useState<Record<string, ImageState>>(initialStates);
-
-  // Handler klik: maksimal 2 klik per gambar
+  // Handler klik: ubah hanya gambar itu, tambah scale x1.2 hingga max 2x, reset sisanya
   const handleImagePress = useCallback((id: string) => {
     setStates((prev) => {
-      const updated: Record<string, ImageState> = {};
+      const next: Record<string, ImageState> = {};
       for (const key in prev) {
         if (key === id && prev[key].clicks < 2) {
-          updated[key] = {
+          const newScale = Math.min(prev[key].scale * 1.2, 2);
+          next[key] = {
             clicked: true,
-            scale: prev[key].scale + 0.2,
+            scale: newScale,
             clicks: prev[key].clicks + 1,
           };
         } else {
-          updated[key] = { clicked: false, scale: 1, clicks: 0 };
+          // reset semua gambar lain
+          next[key] = { clicked: false, scale: 1, clicks: 0 };
         }
       }
-      return updated;
+      return next;
     });
   }, []);
 
-  // Render tiap item di FlatList
+  // Render dengan FlatList 3 kolom
   const renderItem = ({ item }: ListRenderItemInfo<ImageData>) => (
-    <ImageItem
-      item={item}
-      state={states[item.id]}
-      onPress={handleImagePress}
-    />
+    <ImageItem item={item} state={states[item.id]} onPress={handleImagePress} />
   );
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Max 2 clicks per image</Text>
+      <Text style={styles.header}>Grid 3×3: Klik untuk ganti & scale</Text>
       <FlatList
         data={DATA}
         numColumns={3}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(i) => i.id}
         renderItem={renderItem}
         columnWrapperStyle={styles.row}
-        showsVerticalScrollIndicator={false}
+        scrollEnabled={false}
       />
     </ScrollView>
   );
@@ -159,27 +154,26 @@ const ALIFVariant: React.FC = () => {
 
 export default ALIFVariant;
 
-// 7) Styling lengkap
+// Styling
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 20,
+    paddingVertical: 16,
     alignItems: "center",
-    backgroundColor: "#ffffff",
+    backgroundColor: "#fafafa",
   },
-  title: {
-    fontSize: 20,
+  header: {
+    fontSize: 18,
     fontWeight: "600",
-    marginBottom: 15,
+    marginBottom: 12,
   },
   row: {
     justifyContent: "space-between",
-    marginBottom: 15,
     width: screenWidth - 20,
+    marginBottom: 12,
   },
   image: {
     width: IMAGE_SIZE,
     height: IMAGE_SIZE,
-    borderRadius: 10,
-    marginHorizontal: 5,
+    borderRadius: 8,
   },
 });
