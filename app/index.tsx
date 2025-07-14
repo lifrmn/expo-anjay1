@@ -1,16 +1,4 @@
-/**
- * PerfectGridLongVersion.tsx
- *
- * A fully featured, responsive 3×3 image grid for React Native.
- * - Nine “primary” images, each with a paired “alternate” image.
- * - Click (tap) an image to swap to its alternate and scale by 1.2×.
- * - Autoscale capped at 2× the original size.
- * - All other images reset to primary / 1× scale when one is clicked.
- * - Visual border indicator when an image reaches max scale.
- * - Uses useReducer for centralized state management.
- * - Responsive layout reacting to device rotation.
- * - Accessibility labels and descriptive comments throughout.
- */
+// PerfectImageGrid.tsx
 
 import React, { useReducer, FC, useCallback } from "react";
 import {
@@ -24,28 +12,24 @@ import {
   AccessibilityRole,
 } from "react-native";
 
-// -------------------------------------------------------
-// 1) TYPES & DATA
-// -------------------------------------------------------
+// ------------------------------------------------------------------
+// 1) DATA & TYPES
+// ------------------------------------------------------------------
 
-/**
- * Represents a pair of images: the default (“primary”) and its swapped version (“alternate”).
- */
+/** Sepasang URL: utama + alternatif */
 type ImagePair = {
   id: string;
   primaryUri: string;
   alternateUri: string;
 };
 
-/**
- * Shape of the state stored per image in the reducer map.
- */
-type ImageCellState = {
-  isShowingAlternate: boolean;
-  currentScale: number;
+/** State per gambar: apakah tampil versi alternatif & faktor skala */
+type ImageState = {
+  showingAlternate: boolean;
+  scale: number;
 };
 
-// Nine complete primary/alternate image pairs
+/** Daftar 9 pasang gambar */
 const IMAGE_PAIRS: ImagePair[] = [
   {
     id: "1",
@@ -110,97 +94,75 @@ const IMAGE_PAIRS: ImagePair[] = [
   },
 ];
 
-/**
- * Action type for reducer: only one action 'TOGGLE_IMAGE'
- * payload: the id of the image that was tapped.
- */
-type Action = { type: "TOGGLE_IMAGE"; payload: string };
-
-/**
- * Construct initial state map keyed by image id.
- */
-const buildInitialState = (): Record<string, ImageCellState> => {
-  const map: Record<string, ImageCellState> = {};
-  IMAGE_PAIRS.forEach((pair) => {
-    map[pair.id] = { isShowingAlternate: false, currentScale: 1 };
+/** Buat state awal map[id] → { showingAlternate:false, scale:1 } */
+const buildInitialState = (): Record<string, ImageState> => {
+  const m: Record<string, ImageState> = {};
+  IMAGE_PAIRS.forEach((p) => {
+    m[p.id] = { showingAlternate: false, scale: 1 };
   });
-  return map;
+  return m;
 };
 
-// -------------------------------------------------------
-// 2) REDUCER LOGIC
-// -------------------------------------------------------
+// ------------------------------------------------------------------
+// 2) REDUCER & ACTION
+// ------------------------------------------------------------------
 
-/**
- * Reducer: given current state and an action, returns new state map.
- * - Only the tapped image’s state is updated (scale ×1.2 up to max 2, show alternate).
- * - All other images are reset to scale =1, show primary.
+type Action = { type: "TOGGLE"; id: string };
+
+/** 
+ * Saat action.type === "TOGGLE": 
+ * - untuk id itu: scale×1.2 (max 2) + showingAlternate=true 
+ * - semua id lain direset ke scale=1 + showingAlternate=false
  */
-function imageGridReducer(
-  state: Record<string, ImageCellState>,
+function reducer(
+  state: Record<string, ImageState>,
   action: Action
-): Record<string, ImageCellState> {
-  if (action.type !== "TOGGLE_IMAGE") {
-    return state;
-  }
-  const newMap: Record<string, ImageCellState> = {};
-
-  Object.keys(state).forEach((key) => {
-    if (key === action.payload) {
+): Record<string, ImageState> {
+  if (action.type !== "TOGGLE") return state;
+  const next: Record<string, ImageState> = {};
+  for (const key in state) {
+    if (key === action.id) {
       const prev = state[key];
-      // Increase by 1.2× but cap at 2
-      const updatedScale = Math.min(prev.currentScale * 1.2, 2);
-      newMap[key] = {
-        isShowingAlternate: true,
-        currentScale: updatedScale,
+      next[key] = {
+        showingAlternate: true,
+        scale: Math.min(prev.scale * 1.2, 2),
       };
     } else {
-      // Reset all others
-      newMap[key] = { isShowingAlternate: false, currentScale: 1 };
+      next[key] = { showingAlternate: false, scale: 1 };
     }
-  });
-
-  return newMap;
+  }
+  return next;
 }
 
-// -------------------------------------------------------
-// 3) PRESENTATIONAL COMPONENTS
-// -------------------------------------------------------
+// ------------------------------------------------------------------
+// 3) GRID CELL COMPONENT
+// ------------------------------------------------------------------
 
-/**
- * Props for each cell in the grid.
- */
-interface GridCellProps {
-  imagePair: ImagePair;
-  cellState: ImageCellState;
-  onToggle: (id: string) => void;
+interface CellProps {
+  pair: ImagePair;
+  state: ImageState;
+  size: number;
+  onPress: (id: string) => void;
 }
 
-/**
- * Individual cell that displays either primary or alternate image,
- * scales on tap, and shows a colored border if max scale reached.
- */
-const GridCell: FC<GridCellProps> = ({ imagePair, cellState, onToggle }) => {
-  const atMaxScale = cellState.currentScale >= 2;
-
+const GridCell: FC<CellProps> = ({ pair, state, size, onPress }) => {
+  const maxReached = state.scale >= 2;
   return (
     <Pressable
+      onPress={() => onPress(pair.id)}
+      disabled={maxReached}
       accessibilityRole={"imagebutton" as AccessibilityRole}
-      accessibilityLabel={`Gambar ${imagePair.id}`}
-      onPress={() => onToggle(imagePair.id)}
-      disabled={atMaxScale}
-      style={styles.cellWrapper}
+      accessibilityLabel={`Gambar ${pair.id}`}
+      style={[styles.cellContainer, { width: size, height: size }]}
     >
       <Image
         source={{
-          uri: cellState.isShowingAlternate
-            ? imagePair.alternateUri
-            : imagePair.primaryUri,
+          uri: state.showingAlternate ? pair.alternateUri : pair.primaryUri,
         }}
         style={[
-          styles.cellImage,
-          { transform: [{ scale: cellState.currentScale }] },
-          atMaxScale && styles.maxScaleIndicator,
+          styles.image,
+          { transform: [{ scale: state.scale }] },
+          maxReached && styles.maxBorder,
         ]}
         resizeMode="cover"
       />
@@ -208,99 +170,88 @@ const GridCell: FC<GridCellProps> = ({ imagePair, cellState, onToggle }) => {
   );
 };
 
-// -------------------------------------------------------
+// ------------------------------------------------------------------
 // 4) MAIN GRID COMPONENT
-// -------------------------------------------------------
+// ------------------------------------------------------------------
 
-/**
- * PerfectGridFull: 
- * - Renders a static 3×3 grid.
- * - Uses useReducer to drive the tap/scale logic.
- * - Fully responsive to screen width changes.
- */
-const PerfectGridFull: FC = () => {
-  const [gridState, dispatch] = useReducer(
-    imageGridReducer,
+const PerfectImageGrid: FC = () => {
+  const [mapState, dispatch] = useReducer(
+    reducer,
     {},
     buildInitialState
   );
 
-  const toggleImage = useCallback((id: string) => {
-    dispatch({ type: "TOGGLE_IMAGE", payload: id });
-  }, []);
+  const { width: screenW } = useWindowDimensions();
+  const H_PAD = 16;
+  const GAP = 12;
+  const COLS = 3;
+  const totalGaps = H_PAD * 2 + GAP * (COLS - 1);
+  const itemSize = (screenW - totalGaps) / COLS;
+
+  const onToggle = useCallback(
+    (id: string) => dispatch({ type: "TOGGLE", id }),
+    []
+  );
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.headerText}>
-        Perfect 3×3 Grid — Tap to Swap & Scale (max 2×)
-      </Text>
+    <View style={styles.wrapper}>
+      <Text style={styles.title}>Perfect 3×3 Image Grid</Text>
       <FlatList
         data={IMAGE_PAIRS}
+        keyExtractor={(i) => i.id}
         renderItem={({ item }) => (
           <GridCell
-            imagePair={item}
-            cellState={gridState[item.id]}
-            onToggle={toggleImage}
+            pair={item}
+            state={mapState[item.id]}
+            size={itemSize}
+            onPress={onToggle}
           />
         )}
-        keyExtractor={(item) => item.id}
-        numColumns={3}
+        numColumns={COLS}
         scrollEnabled={false}
-        columnWrapperStyle={styles.rowWrapper}
-        contentContainerStyle={styles.listContainer}
+        columnWrapperStyle={styles.row}
+        contentContainerStyle={styles.list}
       />
     </View>
   );
 };
 
-export default PerfectGridFull;
+export default PerfectImageGrid;
 
-// -------------------------------------------------------
-// 5) STYLE DEFINITIONS
-// -------------------------------------------------------
+// ------------------------------------------------------------------
+// 5) STYLES
+// ------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  // outmost wrapper
-  container: {
+  wrapper: {
     flex: 1,
-    backgroundColor: "#ffffff",
-    paddingTop: 24,
     paddingHorizontal: 16,
+    paddingTop: 24,
+    backgroundColor: "#fff",
   },
-  // header text
-  headerText: {
-    fontSize: 18,
+  title: {
+    fontSize: 20,
     fontWeight: "600",
-    marginBottom: 16,
     textAlign: "center",
-    color: "#333333",
+    marginBottom: 16,
   },
-  // FlatList container adjustments
-  listContainer: {
+  list: {
     alignItems: "center",
   },
-  rowWrapper: {
+  row: {
     justifyContent: "space-between",
-    marginBottom: ITEM_MARGIN,
-    width:
-      Dimensions.get("window").width -
-      16 * 2 - // horizontal padding
-      ITEM_MARGIN * (NUM_COLUMNS - 1),
+    marginBottom: 12,
   },
-  // each cell’s container (for Pressable)
-  cellWrapper: {
-    width: ITEM_SIZE,
-    height: ITEM_SIZE,
+  cellContainer: {
+    borderRadius: 8,
+    overflow: "hidden",
   },
-  // image inside each cell
-  cellImage: {
+  image: {
     width: "100%",
     height: "100%",
-    borderRadius: 8,
   },
-  // highlight border when max scale reached
-  maxScaleIndicator: {
+  maxBorder: {
     borderWidth: 3,
-    borderColor: "#FF4500",
+    borderColor: "#FF0000",
   },
 });
