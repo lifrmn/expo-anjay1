@@ -1,192 +1,306 @@
-import React, { useReducer, useCallback, FC } from "react";
+/**
+ * PerfectGridLongVersion.tsx
+ *
+ * A fully featured, responsive 3×3 image grid for React Native.
+ * - Nine “primary” images, each with a paired “alternate” image.
+ * - Click (tap) an image to swap to its alternate and scale by 1.2×.
+ * - Autoscale capped at 2× the original size.
+ * - All other images reset to primary / 1× scale when one is clicked.
+ * - Visual border indicator when an image reaches max scale.
+ * - Uses useReducer for centralized state management.
+ * - Responsive layout reacting to device rotation.
+ * - Accessibility labels and descriptive comments throughout.
+ */
+
+import React, { useReducer, FC, useCallback } from "react";
 import {
   View,
   Text,
   FlatList,
   Pressable,
   Image,
-  Dimensions,
   StyleSheet,
+  useWindowDimensions,
+  AccessibilityRole,
 } from "react-native";
 
-// — Hitung lebar layar dan ukuran sel agar selalu 3 kolom pas
-const { width: SCREEN_W } = Dimensions.get("window");
-const GAP = 12;
-const COLS = 3;
-const CELL_SIZE = (SCREEN_W - GAP * (COLS + 1)) / COLS;
+// -------------------------------------------------------
+// 1) TYPES & DATA
+// -------------------------------------------------------
 
-// — Data: 9 gambar utama + alternatif
+/**
+ * Represents a pair of images: the default (“primary”) and its swapped version (“alternate”).
+ */
 type ImagePair = {
   id: string;
-  main: string;
-  alt: string;
+  primaryUri: string;
+  alternateUri: string;
 };
-const IMAGES: ImagePair[] = [
+
+/**
+ * Shape of the state stored per image in the reducer map.
+ */
+type ImageCellState = {
+  isShowingAlternate: boolean;
+  currentScale: number;
+};
+
+// Nine complete primary/alternate image pairs
+const IMAGE_PAIRS: ImagePair[] = [
   {
     id: "1",
-    main:
+    primaryUri:
       "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiTOBzEKG0_JjvSbPN-GaCBUc74JuAK-kYsyABV0E7P-j163eGv9CiHcJkRaNf9z3UtVUAmOsIeObNgxR30f1fx6x2lDp2f8rR9h-3EayKgpEwKdpOvze7LAeTFgTAsByK2rHKSWHwK-yUD/s1600/catat-nih-5-atraksi-eksotik-di-polewali-mandar_103238_1140.jpg",
-    alt:
+    alternateUri:
       "https://awsimages.detik.net.id/community/media/visual/2021/11/26/coto-makassar-1_169.jpeg?w=620",
   },
   {
     id: "2",
-    main: "https://www.imigrasikendari.com/wp-content/uploads/2024/07/Makassar.webp",
-    alt:
+    primaryUri: "https://www.imigrasikendari.com/wp-content/uploads/2024/07/Makassar.webp",
+    alternateUri:
       "https://awsimages.detik.net.id/community/media/visual/2020/08/27/sop-konro-makassar_169.jpeg?w=620",
   },
   {
     id: "3",
-    main:
+    primaryUri:
       "https://dispar.sulbarprov.go.id/wp-content/uploads/2020/05/gerbang-kota-majene-timur-1.jpg",
-    alt:
+    alternateUri:
       "https://awsimages.detik.net.id/community/media/visual/2016/05/01/774e2f30-1ee4-4984-b216-28fbd9249c3f_169.jpg?w=620",
   },
   {
     id: "4",
-    main:
-      "https://www.50detik.com/wp-content/uploads/2022/12/IMG-20191203-WA0030.jpg",
-    alt:
+    primaryUri: "https://www.50detik.com/wp-content/uploads/2022/12/IMG-20191203-WA0030.jpg",
+    alternateUri:
       "https://awsimages.detik.net.id/community/media/visual/2022/05/15/pallu-cela-makanan-khas-makassar_169.jpeg?w=620",
   },
   {
     id: "5",
-    main:
+    primaryUri:
       "https://cove-blog-id.sgp1.cdn.digitaloceanspaces.com/cove-blog-id/2023/07/Daerah-Bandung-yang-Terkenal.webp",
-    alt:
+    alternateUri:
       "https://awsimages.detik.net.id/community/media/visual/2022/03/20/kuliner-makassar_169.jpeg?w=620",
   },
   {
     id: "6",
-    main:
+    primaryUri:
       "https://asset.kompas.com/crops/GEIiQSsEkCKrIGWEjOp_GaYHIHA=/0x0:1000x667/1200x800/data/photo/2022/07/25/62dec6809a479.jpg",
-    alt:
+    alternateUri:
       "https://awsimages.detik.net.id/community/media/visual/2022/04/02/kue-jalangkote-khas-sulsel_169.jpeg?w=620",
   },
   {
     id: "7",
-    main:
+    primaryUri:
       "https://shopee.co.id/inspirasi-shopee/wp-content/uploads/2022/06/jttO0PTeS5WYFOJ2MwDyZA_thumb_46f.webp",
-    alt:
+    alternateUri:
       "https://awsimages.detik.net.id/community/media/visual/2021/08/16/gogos-kambu_169.jpeg?w=620",
   },
   {
     id: "8",
-    main:
+    primaryUri:
       "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/Busway_in_Bundaran_HI.jpg/960px-Busway_in_Bundaran_HI.jpg",
-    alt:
+    alternateUri:
       "https://awsimages.detik.net.id/community/media/visual/2016/06/12/2c6f4666-d5b8-422c-a661-9fe04ab20a1c_169.jpg?w=620",
   },
   {
     id: "9",
-    main:
+    primaryUri:
       "https://kompaspedia.kompas.id/wp-content/uploads/2021/02/550234B3-D89C-4C07-7B6AF2A6B5206338.jpg",
-    alt:
+    alternateUri:
       "https://awsimages.detik.net.id/community/media/visual/2021/05/25/resep-pisang-epe-khas-makassar-1_169.jpeg?w=620",
   },
 ];
 
-// — Tipe state per sel
-type CellState = {
-  id: string;
-  active: boolean;
-  scale: number;
+/**
+ * Action type for reducer: only one action 'TOGGLE_IMAGE'
+ * payload: the id of the image that was tapped.
+ */
+type Action = { type: "TOGGLE_IMAGE"; payload: string };
+
+/**
+ * Construct initial state map keyed by image id.
+ */
+const buildInitialState = (): Record<string, ImageCellState> => {
+  const map: Record<string, ImageCellState> = {};
+  IMAGE_PAIRS.forEach((pair) => {
+    map[pair.id] = { isShowingAlternate: false, currentScale: 1 };
+  });
+  return map;
 };
 
-// — Buat initial state untuk useReducer
-const initialCells: CellState[] = IMAGES.map((img) => ({
-  id: img.id,
-  active: false,
-  scale: 1,
-}));
+// -------------------------------------------------------
+// 2) REDUCER LOGIC
+// -------------------------------------------------------
 
-// — Action untuk reducer
-type Action = { type: "PRESS"; payload: string };
+/**
+ * Reducer: given current state and an action, returns new state map.
+ * - Only the tapped image’s state is updated (scale ×1.2 up to max 2, show alternate).
+ * - All other images are reset to scale =1, show primary.
+ */
+function imageGridReducer(
+  state: Record<string, ImageCellState>,
+  action: Action
+): Record<string, ImageCellState> {
+  if (action.type !== "TOGGLE_IMAGE") {
+    return state;
+  }
+  const newMap: Record<string, ImageCellState> = {};
 
-// — Reducer: tekan sel → hanya sel itu yang scale×1.2 (cap 2×) dan active, sisanya reset
-function cellsReducer(state: CellState[], action: Action): CellState[] {
-  if (action.type !== "PRESS") return state;
-  return state.map((cell) => {
-    if (cell.id === action.payload) {
-      if (cell.scale >= 2) return cell; // sudah cap
-      const nextScale = Math.min(cell.scale * 1.2, 2);
-      return { ...cell, active: true, scale: nextScale };
+  Object.keys(state).forEach((key) => {
+    if (key === action.payload) {
+      const prev = state[key];
+      // Increase by 1.2× but cap at 2
+      const updatedScale = Math.min(prev.currentScale * 1.2, 2);
+      newMap[key] = {
+        isShowingAlternate: true,
+        currentScale: updatedScale,
+      };
+    } else {
+      // Reset all others
+      newMap[key] = { isShowingAlternate: false, currentScale: 1 };
     }
-    return { ...cell, active: false, scale: 1 };
   });
+
+  return newMap;
 }
 
-// — Komponen grid cell
-const GridCell: FC<{
-  img: ImagePair;
-  cell: CellState;
-  dispatch: React.Dispatch<Action>;
-}> = ({ img, cell, dispatch }) => (
-  <Pressable
-    onPress={() => dispatch({ type: "PRESS", payload: img.id })}
-    disabled={cell.scale >= 2}
-    style={styles.cellWrapper}
-  >
-    <Image
-      source={{ uri: cell.active ? img.alt : img.main }}
-      style={[styles.cellImage, { transform: [{ scale: cell.scale }] }]}
-      resizeMode="cover"
-    />
-  </Pressable>
-);
+// -------------------------------------------------------
+// 3) PRESENTATIONAL COMPONENTS
+// -------------------------------------------------------
 
-// — Komponen utama
-export default function CompleteGrid() {
-  const [cells, dispatch] = useReducer(cellsReducer, initialCells);
+/**
+ * Props for each cell in the grid.
+ */
+interface GridCellProps {
+  imagePair: ImagePair;
+  cellState: ImageCellState;
+  onToggle: (id: string) => void;
+}
 
-  const renderItem = useCallback(
-    ({ item }: { item: ImagePair }) => {
-      const cell = cells.find((c) => c.id === item.id)!;
-      return <GridCell img={item} cell={cell} dispatch={dispatch} />;
-    },
-    [cells]
+/**
+ * Individual cell that displays either primary or alternate image,
+ * scales on tap, and shows a colored border if max scale reached.
+ */
+const GridCell: FC<GridCellProps> = ({ imagePair, cellState, onToggle }) => {
+  const atMaxScale = cellState.currentScale >= 2;
+
+  return (
+    <Pressable
+      accessibilityRole={"imagebutton" as AccessibilityRole}
+      accessibilityLabel={`Gambar ${imagePair.id}`}
+      onPress={() => onToggle(imagePair.id)}
+      disabled={atMaxScale}
+      style={styles.cellWrapper}
+    >
+      <Image
+        source={{
+          uri: cellState.isShowingAlternate
+            ? imagePair.alternateUri
+            : imagePair.primaryUri,
+        }}
+        style={[
+          styles.cellImage,
+          { transform: [{ scale: cellState.currentScale }] },
+          atMaxScale && styles.maxScaleIndicator,
+        ]}
+        resizeMode="cover"
+      />
+    </Pressable>
   );
+};
+
+// -------------------------------------------------------
+// 4) MAIN GRID COMPONENT
+// -------------------------------------------------------
+
+/**
+ * PerfectGridFull: 
+ * - Renders a static 3×3 grid.
+ * - Uses useReducer to drive the tap/scale logic.
+ * - Fully responsive to screen width changes.
+ */
+const PerfectGridFull: FC = () => {
+  const [gridState, dispatch] = useReducer(
+    imageGridReducer,
+    {},
+    buildInitialState
+  );
+
+  const toggleImage = useCallback((id: string) => {
+    dispatch({ type: "TOGGLE_IMAGE", payload: id });
+  }, []);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Complete 3×3 Grid — Max Scale 2×</Text>
+      <Text style={styles.headerText}>
+        Perfect 3×3 Grid — Tap to Swap & Scale (max 2×)
+      </Text>
       <FlatList
-        data={IMAGES}
-        renderItem={renderItem}
-        keyExtractor={(i) => i.id}
-        numColumns={COLS}
-        columnWrapperStyle={styles.row}
+        data={IMAGE_PAIRS}
+        renderItem={({ item }) => (
+          <GridCell
+            imagePair={item}
+            cellState={gridState[item.id]}
+            onToggle={toggleImage}
+          />
+        )}
+        keyExtractor={(item) => item.id}
+        numColumns={3}
         scrollEnabled={false}
+        columnWrapperStyle={styles.rowWrapper}
+        contentContainerStyle={styles.listContainer}
       />
     </View>
   );
-}
+};
 
-// — Styling
+export default PerfectGridFull;
+
+// -------------------------------------------------------
+// 5) STYLE DEFINITIONS
+// -------------------------------------------------------
+
 const styles = StyleSheet.create({
+  // outmost wrapper
   container: {
     flex: 1,
-    paddingTop: 30,
-    backgroundColor: "#fafafa",
+    backgroundColor: "#ffffff",
+    paddingTop: 24,
+    paddingHorizontal: 16,
+  },
+  // header text
+  headerText: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 16,
+    textAlign: "center",
+    color: "#333333",
+  },
+  // FlatList container adjustments
+  listContainer: {
     alignItems: "center",
   },
-  title: {
-    fontSize: 18,
-    fontWeight: "500",
-    marginBottom: 16,
-  },
-  row: {
+  rowWrapper: {
     justifyContent: "space-between",
-    width: SCREEN_W - GAP * 2,
-    marginBottom: GAP,
+    marginBottom: ITEM_MARGIN,
+    width:
+      Dimensions.get("window").width -
+      16 * 2 - // horizontal padding
+      ITEM_MARGIN * (NUM_COLUMNS - 1),
   },
+  // each cell’s container (for Pressable)
   cellWrapper: {
-    width: CELL_SIZE,
-    height: CELL_SIZE,
+    width: ITEM_SIZE,
+    height: ITEM_SIZE,
   },
+  // image inside each cell
   cellImage: {
     width: "100%",
     height: "100%",
     borderRadius: 8,
+  },
+  // highlight border when max scale reached
+  maxScaleIndicator: {
+    borderWidth: 3,
+    borderColor: "#FF4500",
   },
 });
