@@ -1,6 +1,6 @@
 // PerfectImageGrid.tsx
 
-import React, { useReducer, FC, useCallback } from "react";
+import React, { useState, FC, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,27 +9,22 @@ import {
   Image,
   StyleSheet,
   useWindowDimensions,
-  AccessibilityRole,
 } from "react-native";
 
-// ------------------------------------------------------------------
 // 1) DATA & TYPES
-// ------------------------------------------------------------------
 
-/** Sepasang URL: utama + alternatif */
 type ImagePair = {
   id: string;
   primaryUri: string;
   alternateUri: string;
 };
 
-/** State per gambar: apakah tampil versi alternatif & faktor skala */
-type ImageState = {
-  showingAlternate: boolean;
+type CellState = {
+  showAlt: boolean;
   scale: number;
 };
 
-/** Daftar 9 pasang gambar */
+// 9 pasang gambar utama + alternatif
 const IMAGE_PAIRS: ImagePair[] = [
   {
     id: "1",
@@ -94,75 +89,31 @@ const IMAGE_PAIRS: ImagePair[] = [
   },
 ];
 
-/** Buat state awal map[id] → { showingAlternate:false, scale:1 } */
-const buildInitialState = (): Record<string, ImageState> => {
-  const m: Record<string, ImageState> = {};
-  IMAGE_PAIRS.forEach((p) => {
-    m[p.id] = { showingAlternate: false, scale: 1 };
-  });
-  return m;
-};
+// 2) KOMPONEN GRID ITEM
 
-// ------------------------------------------------------------------
-// 2) REDUCER & ACTION
-// ------------------------------------------------------------------
-
-type Action = { type: "TOGGLE"; id: string };
-
-/** 
- * Saat action.type === "TOGGLE": 
- * - untuk id itu: scale×1.2 (max 2) + showingAlternate=true 
- * - semua id lain direset ke scale=1 + showingAlternate=false
- */
-function reducer(
-  state: Record<string, ImageState>,
-  action: Action
-): Record<string, ImageState> {
-  if (action.type !== "TOGGLE") return state;
-  const next: Record<string, ImageState> = {};
-  for (const key in state) {
-    if (key === action.id) {
-      const prev = state[key];
-      next[key] = {
-        showingAlternate: true,
-        scale: Math.min(prev.scale * 1.2, 2),
-      };
-    } else {
-      next[key] = { showingAlternate: false, scale: 1 };
-    }
-  }
-  return next;
-}
-
-// ------------------------------------------------------------------
-// 3) GRID CELL COMPONENT
-// ------------------------------------------------------------------
-
-interface CellProps {
+interface GridItemProps {
   pair: ImagePair;
-  state: ImageState;
+  state: CellState;
   size: number;
   onPress: (id: string) => void;
 }
 
-const GridCell: FC<CellProps> = ({ pair, state, size, onPress }) => {
-  const maxReached = state.scale >= 2;
+const GridItem: FC<GridItemProps> = ({ pair, state, size, onPress }) => {
+  const atMax = state.scale >= 2;
   return (
     <Pressable
       onPress={() => onPress(pair.id)}
-      disabled={maxReached}
-      accessibilityRole={"imagebutton" as AccessibilityRole}
-      accessibilityLabel={`Gambar ${pair.id}`}
-      style={[styles.cellContainer, { width: size, height: size }]}
+      disabled={atMax}
+      style={[styles.cell, { width: size, height: size }]}
+      accessibilityRole="imagebutton"
+      accessibilityLabel={`Gambar nomor ${pair.id}`}
     >
       <Image
-        source={{
-          uri: state.showingAlternate ? pair.alternateUri : pair.primaryUri,
-        }}
+        source={{ uri: state.showAlt ? pair.alternateUri : pair.primaryUri }}
         style={[
           styles.image,
           { transform: [{ scale: state.scale }] },
-          maxReached && styles.maxBorder,
+          atMax && styles.maxBorder,
         ]}
         resizeMode="cover"
       />
@@ -170,79 +121,82 @@ const GridCell: FC<CellProps> = ({ pair, state, size, onPress }) => {
   );
 };
 
-// ------------------------------------------------------------------
-// 4) MAIN GRID COMPONENT
-// ------------------------------------------------------------------
+// 3) MAIN GRID
 
-const PerfectImageGrid: FC = () => {
-  const [mapState, dispatch] = useReducer(
-    reducer,
-    {},
-    buildInitialState
+export default function PerfectImageGrid() {
+  // bangun state awal dari data
+  const [cellStates, setCellStates] = useState<Record<string, CellState>>(
+    () =>
+      IMAGE_PAIRS.reduce((acc, p) => {
+        acc[p.id] = { showAlt: false, scale: 1 };
+        return acc;
+      }, {} as Record<string, CellState>)
   );
 
-  const { width: screenW } = useWindowDimensions();
-  const H_PAD = 16;
+  // hitung ulang ukuran sel ketika lebar berubah
+  const { width } = useWindowDimensions();
+  const PADDING = 16;
   const GAP = 12;
   const COLS = 3;
-  const totalGaps = H_PAD * 2 + GAP * (COLS - 1);
-  const itemSize = (screenW - totalGaps) / COLS;
+  const totalGap = PADDING * 2 + GAP * (COLS - 1);
+  const cellSize = (width - totalGap) / COLS;
 
-  const onToggle = useCallback(
-    (id: string) => dispatch({ type: "TOGGLE", id }),
-    []
-  );
+  // handler tap
+  const handleTap = useCallback((id: string) => {
+    setCellStates((prev) => {
+      const next: Record<string, CellState> = {};
+      Object.keys(prev).forEach((key) => {
+        if (key === id) {
+          // naikkan 1.2×, cap 2×
+          const newScale = Math.min(prev[key].scale * 1.2, 2);
+          next[key] = { showAlt: true, scale: newScale };
+        } else {
+          // reset sisanya
+          next[key] = { showAlt: false, scale: 1 };
+        }
+      });
+      return next;
+    });
+  }, []);
 
   return (
-    <View style={styles.wrapper}>
-      <Text style={styles.title}>Perfect 3×3 Image Grid</Text>
+    <View style={styles.container}>
+      <Text style={styles.header}>Grid 3×3 — Tap to Swap & Scale</Text>
       <FlatList
         data={IMAGE_PAIRS}
         keyExtractor={(i) => i.id}
-        renderItem={({ item }) => (
-          <GridCell
-            pair={item}
-            state={mapState[item.id]}
-            size={itemSize}
-            onPress={onToggle}
-          />
-        )}
         numColumns={COLS}
         scrollEnabled={false}
-        columnWrapperStyle={styles.row}
-        contentContainerStyle={styles.list}
+        columnWrapperStyle={{ justifyContent: "space-between", marginBottom: GAP }}
+        renderItem={({ item }) => (
+          <GridItem
+            pair={item}
+            state={cellStates[item.id]}
+            size={cellSize}
+            onPress={handleTap}
+          />
+        )}
+        contentContainerStyle={{ paddingHorizontal: PADDING }}
       />
     </View>
   );
-};
+}
 
-export default PerfectImageGrid;
-
-// ------------------------------------------------------------------
-// 5) STYLES
-// ------------------------------------------------------------------
+// 4) STYLES
 
 const styles = StyleSheet.create({
-  wrapper: {
+  container: {
     flex: 1,
-    paddingHorizontal: 16,
+    backgroundColor: "#fafafa",
     paddingTop: 24,
-    backgroundColor: "#fff",
   },
-  title: {
+  header: {
     fontSize: 20,
     fontWeight: "600",
     textAlign: "center",
     marginBottom: 16,
   },
-  list: {
-    alignItems: "center",
-  },
-  row: {
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  cellContainer: {
+  cell: {
     borderRadius: 8,
     overflow: "hidden",
   },
@@ -251,7 +205,7 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   maxBorder: {
-    borderWidth: 3,
+    borderWidth: 2,
     borderColor: "#FF0000",
   },
 });
